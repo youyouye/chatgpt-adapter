@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"chatgpt-adapter/core/common"
-	"chatgpt-adapter/core/common/vars"
 	"chatgpt-adapter/core/gin/response"
 	"chatgpt-adapter/core/logger"
 	"github.com/bincooo/emit.io"
@@ -143,7 +142,6 @@ func waitResponse(ctx *gin.Context, r *http.Response, sse bool) (content string)
 	logger.Info("waitResponse ...")
 	completion := common.GetGinCompletion(ctx)
 	matchers := common.GetGinMatchers(ctx)
-	tokens := ctx.GetInt(ginTokens)
 	thinkReason := env.Env.GetBool("server.think_reason")
 	thinkReason = thinkReason && completion.Model[9:] == "deepseek-reasoner"
 	reasoningContent := ""
@@ -238,7 +236,7 @@ func waitResponse(ctx *gin.Context, r *http.Response, sse bool) (content string)
 		return
 	}
 
-	ctx.Set(vars.GinCompletionUsage, response.CalcUsageTokens(content, tokens))
+	// ctx.Set(vars.GinCompletionUsage, response.CalcUsageTokens(content, tokens))
 	if !sse {
 		response.ReasonResponse(ctx, Model, content, reasoningContent)
 	} else {
