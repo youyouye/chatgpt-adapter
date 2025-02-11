@@ -80,7 +80,7 @@ func waitResponse(ctx *gin.Context, r *http.Response, sse bool) (content string)
 	)
 
 	logger.Info("waitResponse ...")
-	tokens := ctx.GetInt(ginTokens)
+	//tokens := ctx.GetInt(ginTokens)
 	completion := common.GetGinCompletion(ctx)
 	toolId := common.GetGinToolValue(ctx).GetString("id")
 	toolId = toolcall.Query(toolId, completion.Tools)
