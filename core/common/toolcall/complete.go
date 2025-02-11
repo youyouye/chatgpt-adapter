@@ -12,7 +12,6 @@ import (
 	"chatgpt-adapter/core/cache"
 	"chatgpt-adapter/core/common"
 	"chatgpt-adapter/core/common/agent"
-	"chatgpt-adapter/core/common/vars"
 	"chatgpt-adapter/core/gin/model"
 	"chatgpt-adapter/core/gin/response"
 	"chatgpt-adapter/core/logger"
@@ -196,8 +195,8 @@ func ToolChoice(ctx *gin.Context, completion model.Completion, callback func(mes
 		return false, err
 	}
 
-	previousTokens := response.CalcTokens(message)
-	ctx.Set(vars.GinCompletionUsage, response.CalcUsageTokens(content, previousTokens))
+	//previousTokens := response.CalcTokens(message)
+	//ctx.Set(vars.GinCompletionUsage, response.CalcUsageTokens(content, previousTokens))
 
 	// 解析参数
 	return parseToTC(ctx, content, completion), nil

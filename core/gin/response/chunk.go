@@ -103,10 +103,10 @@ func ReasonResponse(ctx *gin.Context, mod, content, reasoningContent string) {
 
 	ctx.Set(canResponse, "No!")
 	created := time.Now().Unix()
-	usage := common.GetGinCompletionUsage(ctx)
-	if env.Env.GetBool("server.no-usage") {
-		usage = DefaultUsage
-	}
+	//usage := common.GetGinCompletionUsage(ctx)
+	//if env.Env.GetBool("server.no-usage") {
+	//	usage = DefaultUsage
+	//}
 
 	ctx.JSON(http.StatusOK, model.Response{
 		Model:   mod,
@@ -126,7 +126,7 @@ func ReasonResponse(ctx *gin.Context, mod, content, reasoningContent string) {
 				FinishReason: &stop,
 			},
 		},
-		Usage: usage,
+		//Usage: usage,
 	})
 }
 
@@ -263,7 +263,7 @@ label:
 func ToolCallResponse(ctx *gin.Context, mod, name, args string) {
 	ctx.Set(canResponse, "No!")
 	created := time.Now().Unix()
-	usage := common.GetGinCompletionUsage(ctx)
+	//usage := common.GetGinCompletionUsage(ctx)
 
 	ctx.JSON(http.StatusOK, model.Response{
 		Model:   mod,
@@ -295,7 +295,7 @@ func ToolCallResponse(ctx *gin.Context, mod, name, args string) {
 				FinishReason: &stop,
 			},
 		},
-		Usage: usage,
+		//Usage: usage,
 	})
 }
 
