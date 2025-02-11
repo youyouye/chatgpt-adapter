@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"chatgpt-adapter/core/common"
-	"chatgpt-adapter/core/common/vars"
 	"chatgpt-adapter/core/gin/model"
 	"chatgpt-adapter/core/gin/response"
 	"chatgpt-adapter/core/logger"
@@ -48,8 +47,8 @@ func waitMessage(ch chan string, cancel func(str string) bool) (content string, 
 
 func waitResponse(ctx *gin.Context, cancel chan error, ch chan string, sse bool) (content string) {
 	var (
-		created  = time.Now().Unix()
-		tokens   = ctx.GetInt(ginTokens)
+		created = time.Now().Unix()
+		//tokens   = ctx.GetInt(ginTokens)
 		matchers = common.GetGinMatchers(ctx)
 	)
 
@@ -112,7 +111,7 @@ label:
 		return
 	}
 
-	ctx.Set(vars.GinCompletionUsage, response.CalcUsageTokens(content, tokens))
+	//ctx.Set(vars.GinCompletionUsage, response.CalcUsageTokens(content, tokens))
 	if !sse {
 		response.Response(ctx, Model, content)
 	} else {

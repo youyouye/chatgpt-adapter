@@ -8,7 +8,6 @@ import (
 
 	"chatgpt-adapter/core/common"
 	"chatgpt-adapter/core/common/toolcall"
-	"chatgpt-adapter/core/common/vars"
 	"chatgpt-adapter/core/gin/model"
 	"chatgpt-adapter/core/gin/response"
 	"chatgpt-adapter/core/logger"
@@ -153,10 +152,10 @@ func waitResponse(ctx *gin.Context, r *http.Response, sse bool) (content string)
 		}
 
 		if choice.FinishReason != nil && *choice.FinishReason == "stop" {
-			if chat.Usage == nil {
-				chat.Usage = response.CalcUsageTokens(content, tokens)
-			}
-			ctx.Set(vars.GinCompletionUsage, chat.Usage)
+			//if chat.Usage == nil {
+			//	chat.Usage = response.CalcUsageTokens(content, tokens)
+			//}
+			//ctx.Set(vars.GinCompletionUsage, chat.Usage)
 			if sse {
 				response.Event(ctx, "", chat)
 			}

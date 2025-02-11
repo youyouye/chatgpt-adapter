@@ -3,7 +3,6 @@ package response
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/iocgo/sdk/env"
 	"math/rand"
 	"net/http"
 	"strings"
@@ -167,10 +166,10 @@ func ReasonSSEResponse(ctx *gin.Context, mod, content, reasoningContent string, 
 
 	done := false
 	finishReason := ""
-	usage := common.GetGinCompletionUsage(ctx)
-	if env.Env.GetBool("server.no-usage") {
-		usage = DefaultUsage
-	}
+	//usage := common.GetGinCompletionUsage(ctx)
+	//if env.Env.GetBool("server.no-usage") {
+	//	usage = DefaultUsage
+	//}
 
 	if content == "[DONE]" {
 		done = true
@@ -253,7 +252,7 @@ label:
 				},
 			},
 		}
-		response.Usage = usage
+		//response.Usage = usage
 		response.Choices[0].FinishReason = &finishReason
 		Event(ctx, "", response)
 		Event(ctx, "", "[DONE]")
@@ -302,7 +301,7 @@ func ToolCallResponse(ctx *gin.Context, mod, name, args string) {
 func SSEToolCallResponse(ctx *gin.Context, mod, name, args string, created int64) {
 	ctx.Set(canResponse, "No!")
 	setSSEHeader(ctx)
-	usage := common.GetGinCompletionUsage(ctx)
+	//usage := common.GetGinCompletionUsage(ctx)
 
 	response := model.Response{
 		Model:   mod,
@@ -342,7 +341,7 @@ func SSEToolCallResponse(ctx *gin.Context, mod, name, args string, created int64
 
 	response.Choices[0].FinishReason = &toolCalls
 	response.Choices[0].Delta = nil
-	response.Usage = usage
+	//response.Usage = usage
 	Event(ctx, "", response)
 
 	Event(ctx, "", "[DONE]")
