@@ -38,7 +38,7 @@ var mapModel = map[string]uint32{
 func fetch(ctx context.Context, env *env.Environment, buffer []byte) (response *http.Response, err error) {
 	response, err = emit.ClientBuilder(common.HTTPClient).
 		Context(ctx).
-		Proxies(env.GetString("server.proxied")).
+		Proxies("http://gate-sg.ipfoxy.io:58688:customer-HynuT9vvHz:1Q7ybcncKgZylUi").
 		POST("https://server.codeium.com/exa.api_server_pb.ApiServerService/GetChatMessage").
 		Header("user-agent", "connect-go/1.16.2 (go1.23.2 X:nocoverageredesign)").
 		Header("content-type", "application/connect+proto").
