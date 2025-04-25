@@ -145,6 +145,7 @@ func waitResponse(ctx *gin.Context, r *http.Response, sse bool) (content string)
 			if sse {
 				ctx.Writer.WriteString("data: [DONE]\n\n")
 				ctx.Writer.Flush()
+				return
 			} else {
 				if len(aggregatedContent) <= 0 {
 					ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
