@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -162,6 +163,13 @@ func waitResponse(ctx *gin.Context, r *http.Response, sse bool) (content string)
 			// Process the message content
 			if scanner.Scan() {
 				messageData := scanner.Bytes()
+				for {
+					if strings.Contains(string(messageData), "event: message") {
+						messageData = scanner.Bytes()
+					} else {
+						break
+					}
+				}
 
 				if sse {
 					// Format as ChatGPT SSE
