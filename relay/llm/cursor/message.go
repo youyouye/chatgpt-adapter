@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/iocgo/sdk/env"
 	"io"
 	"net/http"
 	"slices"
@@ -13,10 +12,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/iocgo/sdk/env"
+
 	"chatgpt-adapter/core/common"
 	"chatgpt-adapter/core/common/vars"
 	"chatgpt-adapter/core/gin/response"
 	"chatgpt-adapter/core/logger"
+
 	"github.com/bincooo/emit.io"
 	"github.com/gin-gonic/gin"
 	"github.com/golang/protobuf/proto"
@@ -121,6 +123,7 @@ func waitResponse(ctx *gin.Context, r *http.Response, sse bool) (content string)
 
 	scanner := newScanner(r.Body)
 	for {
+		// 读取事件类型
 		if !scanner.Scan() {
 			raw := response.ExecMatchers(matchers, "", true)
 			if raw != "" && sse {
@@ -129,11 +132,13 @@ func waitResponse(ctx *gin.Context, r *http.Response, sse bool) (content string)
 			content += raw
 			break
 		}
+
 		event := scanner.Text()
 		if event == "" {
 			continue
 		}
 
+		// 读取消息内容
 		if !scanner.Scan() {
 			raw := response.ExecMatchers(matchers, "", true)
 			if raw != "" && sse {
@@ -144,10 +149,11 @@ func waitResponse(ctx *gin.Context, r *http.Response, sse bool) (content string)
 		}
 
 		chunk := scanner.Bytes()
-		if len(chunk) == 0 {
+		if len(chunk) == 0 && event[7:] != "message" {
 			continue
 		}
 
+		// 处理错误事件
 		if event[7:] == "error" {
 			if bytes.Equal(chunk, []byte("{}")) {
 				continue
@@ -165,52 +171,57 @@ func waitResponse(ctx *gin.Context, r *http.Response, sse bool) (content string)
 			return
 		}
 
+		// 跳过系统消息或空内容
 		if event[7:] == "system" || bytes.Equal(chunk, []byte("{}")) {
 			continue
 		}
 
-		raw := string(chunk)
-		reasonContent := ""
-		if thinkReason && think == 0 {
-			if strings.HasPrefix(raw, "<think>") {
-				reasonContent = raw[7:]
+		// 处理实际消息内容
+		if event[7:] == "message" {
+			raw := string(chunk)
+			reasonContent := ""
+
+			if thinkReason && think == 0 {
+				if strings.HasPrefix(raw, "<think>") {
+					reasonContent = raw[7:]
+					raw = ""
+					think = 1
+				}
+			}
+
+			if thinkReason && think == 1 {
+				reasonContent = raw
+				if strings.HasPrefix(raw, "</think>") {
+					reasonContent = ""
+					think = 2
+				}
+
 				raw = ""
-				think = 1
-			}
-		}
-
-		if thinkReason && think == 1 {
-			reasonContent = raw
-			if strings.HasPrefix(raw, "</think>") {
-				reasonContent = ""
-				think = 2
+				logger.Debug("----- think raw -----")
+				logger.Debug(reasonContent)
+				reasoningContent += reasonContent
+				goto label
 			}
 
-			raw = ""
-			logger.Debug("----- think raw -----")
-			logger.Debug(reasonContent)
-			reasoningContent += reasonContent
-			goto label
-		}
+			logger.Debug("----- raw -----")
+			logger.Debug(raw)
+			onceExec()
 
-		logger.Debug("----- raw -----")
-		logger.Debug(raw)
-		onceExec()
+			raw = response.ExecMatchers(matchers, raw, false)
+			if len(raw) == 0 {
+				continue
+			}
 
-		raw = response.ExecMatchers(matchers, raw, false)
-		if len(raw) == 0 {
-			continue
-		}
+			if raw == response.EOF {
+				break
+			}
 
-		if raw == response.EOF {
-			break
+		label:
+			if sse {
+				response.ReasonSSEResponse(ctx, Model, raw, reasonContent, created)
+			}
+			content += raw
 		}
-
-	label:
-		if sse {
-			response.ReasonSSEResponse(ctx, Model, raw, reasonContent, created)
-		}
-		content += raw
 	}
 
 	if content == "" && response.NotSSEHeader(ctx) {
