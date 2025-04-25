@@ -10,17 +10,18 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"math"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+
 	"github.com/bincooo/emit.io"
 	"github.com/gin-gonic/gin"
 	"github.com/golang/protobuf/proto"
 	"github.com/google/uuid"
 	"github.com/iocgo/sdk/env"
 	"github.com/iocgo/sdk/stream"
-	"math"
-	"net/http"
-	"net/url"
-	"strings"
-	"time"
 )
 
 var (
@@ -124,19 +125,39 @@ func fetch(ctx *gin.Context, env *env.Environment, cookie string, buffer []byte)
 
 func convertRequest(completion model.Completion) (buffer []byte, err error) {
 	mid := uuid.NewString()
-	messages := stream.Map(stream.OfSlice(completion.Messages), func(message model.Keyv[interface{}]) *ChatMessage_Content_Message {
-		return &ChatMessage_Content_Message{
+
+	// Collect all system messages first
+	var systemMessages []*ChatMessage_Content_Message
+	var regularMessages []*ChatMessage_Content_Message
+
+	stream.Map(stream.OfSlice(completion.Messages), func(message model.Keyv[interface{}]) *ChatMessage_Content_Message {
+		chatMessage := &ChatMessage_Content_Message{
 			Empty51:        &Empty,
 			Uid:            mid,
-			Role:           elseOf[uint32](message.Is("role", "user"), 1, 2),
 			Value:          message.GetString("content"),
 			UnknownField2:  1,
 			UnknownField29: 1,
 		}
+
+		if message.Is("role", "system") {
+			// Convert system messages to user type and collect them
+			chatMessage.Role = 1 // user type
+			systemMessages = append(systemMessages, chatMessage)
+		} else {
+			// Keep other messages as they are
+			chatMessage.Role = elseOf[uint32](message.Is("role", "user"), 1, 2)
+			regularMessages = append(regularMessages, chatMessage)
+		}
+
+		return chatMessage
 	}).ToSlice()
+
+	// Combine system messages (now converted to user) at the beginning, followed by regular messages
+	allMessages := append(systemMessages, regularMessages...)
+
 	message := &ChatMessage{
 		Content: &ChatMessage_Content{
-			Messages:      messages,
+			Messages:      allMessages,
 			UnknownField2: 1,
 			Empty3:        &Empty,
 			UnknownField4: 1,
@@ -180,19 +201,12 @@ func convertRequest(completion model.Completion) (buffer []byte, err error) {
 		},
 	}
 
-	//message = &msg
-	//message.Content.Messages = messages
 	protoBytes, err := proto.Marshal(message)
 	if err != nil {
 		return
 	}
-	//println(hex.EncodeToString(protoBytes))
-
-	//header := int32ToBytes(0, len(protoBytes))
-	//buffer = append(header, protoBytes...)
 
 	buffer = protoBytes
-	// newMessage()
 	return
 }
 
