@@ -166,6 +166,7 @@ func waitResponse(ctx *gin.Context, r *http.Response, sse bool) (content string)
 				messageData := scanner.Bytes()
 				for {
 					if strings.Contains(string(messageData), "event: message") {
+						scanner.Scan()
 						messageData = scanner.Bytes()
 					} else {
 						break
