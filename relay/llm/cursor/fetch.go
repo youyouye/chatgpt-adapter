@@ -154,12 +154,12 @@ func convertRequest(completion model.Completion) (buffer []byte, err error) {
 
 	// Combine system messages (now converted to user) at the beginning, followed by regular messages
 	allMessages := append(systemMessages, regularMessages...)
-
+	insrtuct := "always response in chinese"
 	message := &ChatMessage{
 		Content: &ChatMessage_Content{
 			Messages:      allMessages,
 			UnknownField2: 1,
-			Empty3:        &Empty,
+			Empty3:        &insrtuct,
 			UnknownField4: 1,
 			Model: &ChatMessage_Content_Model{
 				Value:  completion.Model[7:],
