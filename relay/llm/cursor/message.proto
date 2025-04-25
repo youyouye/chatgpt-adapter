@@ -57,10 +57,13 @@ message ChatMessage {
       string uuid = 1;
       uint32 unknown_field3 = 3;
     }
+    message Instruction {
+      string instruction = 1;
+    }
 
     repeated Message messages = 1;
     uint32 unknown_field2 = 2;
-    optional string empty3 = 3;
+    Instruction instruction = 3;
     uint32 unknown_field4 = 4;
     Model model = 5;
     Unknown_field15 unknown_field15 = 15;

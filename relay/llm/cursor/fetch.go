@@ -127,38 +127,40 @@ func convertRequest(completion model.Completion) (buffer []byte, err error) {
 	mid := uuid.NewString()
 
 	// Collect all system messages first
-	var systemMessages []*ChatMessage_Content_Message
+	var systemInstructions []string
 	var regularMessages []*ChatMessage_Content_Message
 
 	stream.Map(stream.OfSlice(completion.Messages), func(message model.Keyv[interface{}]) *ChatMessage_Content_Message {
+		if message.Is("role", "system") {
+			// Collect system messages for the instruction field
+			systemInstructions = append(systemInstructions, message.GetString("content"))
+			return nil
+		}
+
+		// Process regular messages
 		chatMessage := &ChatMessage_Content_Message{
 			Empty51:        &Empty,
 			Uid:            mid,
 			Value:          message.GetString("content"),
 			UnknownField2:  1,
 			UnknownField29: 1,
+			Role:           elseOf[uint32](message.Is("role", "user"), 1, 2),
 		}
 
-		if message.Is("role", "system") {
-			// Convert system messages to user type and collect them
-			chatMessage.Role = 1 // user type
-			systemMessages = append(systemMessages, chatMessage)
-		} else {
-			// Keep other messages as they are
-			chatMessage.Role = elseOf[uint32](message.Is("role", "user"), 1, 2)
-			regularMessages = append(regularMessages, chatMessage)
-		}
-
+		regularMessages = append(regularMessages, chatMessage)
 		return chatMessage
 	}).ToSlice()
 
-	// Combine system messages (now converted to user) at the beginning, followed by regular messages
-	allMessages := append(systemMessages, regularMessages...)
+	// Combine system messages as instruction text
+	instructionText := strings.Join(systemInstructions, "\n")
+
 	message := &ChatMessage{
 		Content: &ChatMessage_Content{
-			Messages:      allMessages,
+			Messages:      regularMessages,
 			UnknownField2: 1,
-			Empty3:        &Empty,
+			Instruction: &ChatMessage_Content_Instruction{
+				Instruction: instructionText,
+			},
 			UnknownField4: 1,
 			Model: &ChatMessage_Content_Model{
 				Value:  completion.Model[7:],
