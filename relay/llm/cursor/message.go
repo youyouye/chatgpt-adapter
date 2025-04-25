@@ -8,15 +8,13 @@ import (
 	"io"
 	"net/http"
 	"slices"
-	"strings"
-	"sync"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/iocgo/sdk/env"
 
 	"chatgpt-adapter/core/common"
-	"chatgpt-adapter/core/common/vars"
-	"chatgpt-adapter/core/gin/response"
 	"chatgpt-adapter/core/logger"
 
 	"github.com/bincooo/emit.io"
@@ -105,55 +103,39 @@ func waitMessage(r *http.Response, cancel func(str string) bool) (content string
 
 func waitResponse(ctx *gin.Context, r *http.Response, sse bool) (content string) {
 	defer r.Body.Close()
-	created := time.Now().Unix()
 	logger.Info("waitResponse ...")
-	matchers := common.GetGinMatchers(ctx)
 	completion := common.GetGinCompletion(ctx)
-	tokens := ctx.GetInt(ginTokens)
 	thinkReason := env.Env.GetBool("server.think_reason")
 	thinkReason = thinkReason && (slices.Contains([]string{"deepseek-r1", "claude-3.7-sonnet-thinking", "gemini-2.0-flash-thinking-exp"}, completion.Model[7:]))
-	reasoningContent := ""
-	think := 0
-
-	onceExec := sync.OnceFunc(func() {
-		if !sse {
-			ctx.Writer.WriteHeader(http.StatusOK)
-		}
-	})
 
 	scanner := newScanner(r.Body)
-	for {
-		// 读取事件类型
-		if !scanner.Scan() {
-			raw := response.ExecMatchers(matchers, "", true)
-			if raw != "" && sse {
-				response.SSEResponse(ctx, Model, raw, created)
-			}
-			content += raw
-			break
-		}
+	// Set response headers for streaming
+	if sse {
+		ctx.Writer.Header().Set("Content-Type", "text/event-stream")
+		ctx.Writer.Header().Set("Cache-Control", "no-cache")
+		ctx.Writer.Header().Set("Connection", "keep-alive")
+		ctx.Writer.WriteHeader(http.StatusOK)
+	}
 
+	var aggregatedContent string // For non-streaming mode
+	var finalID string
+
+	for scanner.Scan() {
 		event := scanner.Text()
 		if event == "" {
 			continue
 		}
 
-		// 读取消息内容
 		if !scanner.Scan() {
-			raw := response.ExecMatchers(matchers, "", true)
-			if raw != "" && sse {
-				response.SSEResponse(ctx, Model, raw, created)
-			}
-			content += raw
 			break
 		}
 
 		chunk := scanner.Bytes()
-		if len(chunk) == 0 && event[7:] != "message" {
+
+		if len(chunk) == 0 {
 			continue
 		}
 
-		// 处理错误事件
 		if event[7:] == "error" {
 			if bytes.Equal(chunk, []byte("{}")) {
 				continue
@@ -163,76 +145,103 @@ func waitResponse(ctx *gin.Context, r *http.Response, sse bool) (content string)
 			if err == nil {
 				err = &chunkErr
 			}
-
-			if response.NotSSEHeader(ctx) {
-				logger.Error(err)
-				response.Error(ctx, -1, err)
+			if sse {
+				ctx.Writer.WriteString("data: [DONE]\n\n")
+				ctx.Writer.Flush()
+			} else {
+				if len(aggregatedContent) <= 0 {
+					ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+					return
+				} else {
+					break
+				}
 			}
-			return
 		}
 
-		// 跳过系统消息或空内容
 		if event[7:] == "system" || bytes.Equal(chunk, []byte("{}")) {
 			continue
 		}
 
-		// 处理实际消息内容
 		if event[7:] == "message" {
-			raw := string(chunk)
-			reasonContent := ""
+			// Process the message content
+			if scanner.Scan() {
+				messageData := scanner.Bytes()
 
-			if thinkReason && think == 0 {
-				if strings.HasPrefix(raw, "<think>") {
-					reasonContent = raw[7:]
-					raw = ""
-					think = 1
+				if sse {
+					// Format as ChatGPT SSE
+					id := uuid.NewString()
+					if finalID == "" {
+						finalID = id
+					}
+					if len(messageData) <= 0 {
+						continue
+					}
+
+					sseMessage := map[string]interface{}{
+						"id":      id,
+						"object":  "chat.completion.chunk",
+						"created": time.Now().Unix(),
+						"model":   completion.Model[7:],
+						"choices": []map[string]interface{}{
+							{
+								"index": 0,
+								"delta": map[string]interface{}{
+									"content": string(messageData),
+								},
+								"finish_reason": nil,
+							},
+						},
+					}
+
+					// Check if this is the end of the stream
+					if len(messageData) == 0 || string(messageData) == "[DONE]" {
+						sseMessage["choices"].([]map[string]interface{})[0]["finish_reason"] = "stop"
+					}
+
+					jsonData, err := json.Marshal(sseMessage)
+					if err == nil {
+						ctx.Writer.WriteString("data: " + string(jsonData) + "\n\n")
+						ctx.Writer.Flush()
+					}
+
+					// If done, send final [DONE] message
+					if len(messageData) == 0 || string(messageData) == "[DONE]" {
+						ctx.Writer.WriteString("data: [DONE]\n\n")
+						ctx.Writer.Flush()
+						return
+					}
+				} else {
+					// For non-streaming, accumulate content
+					aggregatedContent += string(messageData)
 				}
 			}
-
-			if thinkReason && think == 1 {
-				reasonContent = raw
-				if strings.HasPrefix(raw, "</think>") {
-					reasonContent = ""
-					think = 2
-				}
-
-				raw = ""
-				logger.Debug("----- think raw -----")
-				logger.Debug(reasonContent)
-				reasoningContent += reasonContent
-				goto label
-			}
-
-			logger.Debug("----- raw -----")
-			logger.Debug(raw)
-			onceExec()
-
-			raw = response.ExecMatchers(matchers, raw, false)
-			if len(raw) == 0 {
-				continue
-			}
-
-			if raw == response.EOF {
-				break
-			}
-
-		label:
-			if sse {
-				response.ReasonSSEResponse(ctx, Model, raw, reasonContent, created)
-			}
-			content += raw
 		}
 	}
 
-	if content == "" && response.NotSSEHeader(ctx) {
-		return
-	}
-
-	ctx.Set(vars.GinCompletionUsage, response.CalcUsageTokens(content, tokens))
-	if !sse {
-		response.ReasonResponse(ctx, Model, content, reasoningContent)
-	} else {
-		response.SSEResponse(ctx, Model, "[DONE]", created)
+	// Handle end of scanning
+	if !sse && len(aggregatedContent) > 0 {
+		// Return aggregated content in ChatGPT format
+		response := map[string]interface{}{
+			"id":      uuid.NewString(),
+			"object":  "chat.completion",
+			"created": time.Now().Unix(),
+			"model":   completion.Model[7:],
+			"choices": []map[string]interface{}{
+				{
+					"index": 0,
+					"message": map[string]interface{}{
+						"role":    "assistant",
+						"content": aggregatedContent,
+					},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		ctx.JSON(http.StatusOK, response)
+	} else if sse {
+		// Ensure we send [DONE] at the end if we haven't already
+		ctx.Writer.WriteString("data: [DONE]\n\n")
+		ctx.Writer.Flush()
 	}
 	return
 }
