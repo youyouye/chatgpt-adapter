@@ -244,12 +244,14 @@ func waitResponse(ctx *gin.Context, r *http.Response, sse bool) (content string)
 			},
 		}
 		ctx.JSON(http.StatusOK, response)
+		return aggregatedContent
 	} else if sse {
 		// Ensure we send [DONE] at the end if we haven't already
 		ctx.Writer.WriteString("data: [DONE]\n\n")
 		ctx.Writer.Flush()
+		return aggregatedContent
 	}
-	return
+	return aggregatedContent
 }
 
 func newScanner(body io.ReadCloser) (scanner *bufio.Scanner) {
