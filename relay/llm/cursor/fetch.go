@@ -154,6 +154,19 @@ func convertRequest(completion model.Completion) (buffer []byte, err error) {
 	// Combine system messages as instruction text
 	instructionText := strings.Join(systemInstructions, "\n")
 
+	// Add combined system messages as a user message
+	if len(systemInstructions) > 0 {
+		systemAsUser := &ChatMessage_Content_Message{
+			Empty51:        &Empty,
+			Uid:            mid,
+			Value:          strings.Join(systemInstructions, "\n"),
+			UnknownField2:  1,
+			UnknownField29: 1,
+			Role:           1, // 1 represents user role
+		}
+		regularMessages = append([]*ChatMessage_Content_Message{systemAsUser}, regularMessages...)
+	}
+
 	message := &ChatMessage{
 		Content: &ChatMessage_Content{
 			Messages:      regularMessages,
