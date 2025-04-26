@@ -258,85 +258,137 @@ func waitResponse(ctx *gin.Context, r *http.Response, sse bool) (content string)
 
 func newScanner(body io.ReadCloser) (scanner *bufio.Scanner) {
 	// 每个字节占8位
-	// 00000011 第一个字节是占位符，应该是用来代表消息类型的 假定 0: 消息体/proto, 1: 系统提示词/gzip, 2、3: 错误标记/gzip
+	// 00000000 (0): 消息体(proto, 不需要解压)
+	// 00000001 (1): 系统提示词(proto, 需要gzip解压)
+	// 00000010 (2): 错误信息(JSON, 不需要解压)
+	// 00000011 (3): 错误信息(JSON, 需要gzip解压)
 	// 00000000 00000000 00000010 11011000 4个字节描述包体大小
 	scanner = bufio.NewScanner(body)
 	var (
-		magic    byte
-		chunkLen = -1
-		setup    = 5
+		buffer   []byte
+		position int
 	)
 
 	scanner.Split(func(data []byte, atEOF bool) (advance int, token []byte, err error) {
-		if atEOF && len(data) == 0 {
-			return
+		// 累积数据
+		if len(buffer) == 0 {
+			buffer = data
+		} else if len(data) > 0 {
+			buffer = append(buffer, data...)
 		}
 
-		if atEOF {
-			return len(data), data, err
-		}
-
-		if chunkLen == -1 && len(data) < setup {
-			return
-		}
-
-		if chunkLen == -1 {
-			magic = data[0]
-			chunkLen = bytesToInt32(data[1:setup])
-
-			// 这部分应该是分割标记？或者补位
-			if magic == 0 && chunkLen == 0 {
-				chunkLen = -1
-				return setup, []byte(""), err
+		// 如果数据不足，无法处理
+		if len(buffer) < 5 {
+			if atEOF {
+				return len(data), nil, nil
 			}
-
-			if magic == 3 { // 假定它是错误标记
-				return setup, []byte("event: error"), err
-			}
-
-			if magic == 2 { // 内部异常信息
-				return setup, []byte("event: error"), err
-			}
-
-			if magic == 1 { // 系统提示词标记？
-				return setup, []byte("event: system"), err
-			}
-
-			// magic == 0
-			return setup, []byte("event: message"), err
+			return 0, nil, nil
 		}
 
-		if len(data) < chunkLen {
-			return
-		}
+		// 读取消息头
+		magic := buffer[position]
+		dataLength := bytesToInt32(buffer[position+1 : position+5])
 
-		chunk := data[:chunkLen]
-		chunkLen = -1
-
-		i := len(chunk)
-		// 解码
-		if emit.IsEncoding(chunk, "gzip") {
-			reader, gzErr := emit.DecodeGZip(io.NopCloser(bytes.NewReader(chunk)))
-			if gzErr != nil {
-				err = gzErr
-				return
+		// 检查我们是否有完整的数据块
+		if len(buffer)-position < 5+dataLength {
+			if atEOF {
+				return len(data), nil, nil
 			}
-			chunk, err = io.ReadAll(reader)
+			return 0, nil, nil
 		}
-		if magic == 0 {
-			// println(hex.EncodeToString(chunk))
+
+		// 提取数据块
+		chunk := buffer[position+5 : position+5+dataLength]
+		nextPosition := position + 5 + dataLength
+
+		// 准备返回值
+		var eventType string
+		var resultChunk []byte
+
+		// 根据magic处理不同类型的消息
+		switch magic {
+		case 0: // 消息体/proto, 不需要解压
+			eventType = "event: message"
 			var message ResMessage
 			err = proto.Unmarshal(chunk, &message)
 			if err != nil {
-				return i, chunk, err
+				position = nextPosition
+				buffer = buffer[nextPosition:]
+				return len(data), nil, err
 			}
-			if message.Msg == nil {
-				chunk = []byte("")
-				return
+			if message.Msg != nil {
+				resultChunk = []byte(message.Msg.Value)
+			} else {
+				resultChunk = []byte("")
 			}
-			chunk = []byte(message.Msg.Value)
+
+		case 1: // 系统提示词/proto, 需要gzip解压
+			eventType = "event: system"
+			reader, gzErr := emit.DecodeGZip(io.NopCloser(bytes.NewReader(chunk)))
+			if gzErr != nil {
+				position = nextPosition
+				buffer = buffer[nextPosition:]
+				return len(data), nil, gzErr
+			}
+			decompressed, readErr := io.ReadAll(reader)
+			if readErr != nil {
+				position = nextPosition
+				buffer = buffer[nextPosition:]
+				return len(data), nil, readErr
+			}
+			var message ResMessage
+			err = proto.Unmarshal(decompressed, &message)
+			if err != nil {
+				position = nextPosition
+				buffer = buffer[nextPosition:]
+				return len(data), nil, err
+			}
+			if message.Msg != nil {
+				resultChunk = []byte(message.Msg.Value)
+			} else {
+				resultChunk = []byte("")
+			}
+
+		case 2: // 错误信息/JSON, 不需要解压
+			eventType = "event: error"
+			resultChunk = chunk
+
+		case 3: // 错误信息/JSON, 需要gzip解压
+			eventType = "event: error"
+			reader, gzErr := emit.DecodeGZip(io.NopCloser(bytes.NewReader(chunk)))
+			if gzErr != nil {
+				position = nextPosition
+				buffer = buffer[nextPosition:]
+				return len(data), nil, gzErr
+			}
+			decompressed, readErr := io.ReadAll(reader)
+			if readErr != nil {
+				position = nextPosition
+				buffer = buffer[nextPosition:]
+				return len(data), nil, readErr
+			}
+			resultChunk = decompressed
+
+		default:
+			// 未知的魔术数字，跳过
+			position = nextPosition
+			buffer = buffer[nextPosition:]
+			return len(data), nil, nil
 		}
-		return i, chunk, err
+
+		// 进入下一个块
+		position = 0
+		buffer = buffer[nextPosition:]
+
+		if eventType != "" {
+			if len(data) <= nextPosition {
+				return len(data), []byte(eventType), nil
+			} else {
+				return nextPosition, []byte(eventType), nil
+			}
+		}
+
+		return len(data), resultChunk, nil
 	})
 
 	return
