@@ -157,6 +157,8 @@ func waitResponse(ctx *gin.Context, r *http.Response, sse bool) (content string)
 		}
 
 		if event[7:] == "system" || bytes.Equal(chunk, []byte("{}")) {
+			scanner.Scan()
+			_ = scanner.Bytes()
 			continue
 		}
 
