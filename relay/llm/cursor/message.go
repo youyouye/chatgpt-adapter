@@ -328,7 +328,7 @@ func newScanner(body io.ReadCloser) (scanner *bufio.Scanner) {
 			var message ResMessage
 			err = proto.Unmarshal(chunk, &message)
 			if err != nil {
-				return
+				return i, chunk, err
 			}
 			if message.Msg == nil {
 				chunk = []byte("")
