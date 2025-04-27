@@ -20,6 +20,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang/protobuf/proto"
 	"github.com/google/uuid"
+	"github.com/imroc/req/v3"
 	"github.com/iocgo/sdk/env"
 	"github.com/iocgo/sdk/stream"
 )
@@ -53,35 +54,44 @@ func fetch(ctx *gin.Context, env *env.Environment, cookie string, buffer []byte)
 
 	sessionId := uuid.NewString()
 	configVersion := uuid.NewString()
-	response, err = emit.ClientBuilder(common.HTTPClient).
-		Context(ctx.Request.Context()).
-		Proxies(env.GetString("server.proxied")).
-		POST("https://api2.cursor.sh/aiserver.v1.BidiService/BidiAppend").
-		Header("authorization", "Bearer "+cookie).
-		Header("content-type", "application/proto").
-		Header("connect-accept-encoding", "gzip").
-		Header("connect-content-encoding", "gzip").
-		Header("connect-protocol-version", "1").
-		Header("traceparent", "00-"+strings.ReplaceAll(uuid.NewString(), "-", "")+"-"+common.Hex(16)+"-00").
-		Header("user-agent", "connect-es/1.6.1").
-		Header("x-amzn-trace-id", "Root="+uuid.NewString()).
-		Header("x-client-key", genClientKey(ctx.GetString("token"))).
-		Header("x-cursor-checksum", genChecksum(ctx, env)).
-		Header("x-cursor-client-version", "0.48.9").
-		Header("x-cursor-config-version", configVersion).
-		Header("x-cursor-timezone", "Asia/Shanghai").
-		Header("x-ghost-mode", "false").
-		Header("x-new-onboarding-completed", "false").
-		//Header("x-request-id", uuid.NewString()).
-		Header("x-session-id", sessionId).
-		Header("host", "api2.cursor.sh").
-		Header("Connection", "close").
-		Header("Transfer-Encoding", "chunked").
-		Bytes(buffer).
-		DoC(emit.Status(http.StatusOK), emit.IsPROTO)
+
+	// Create a req client with Chrome fingerprint
+	client := req.DevMode()
+
+	// Impersonate Chrome browser to bypass anti-crawler detection
+	// This mocks full HTTP fingerprint including TLS, headers, and other browser characteristics
+	// which helps bypass server-side fingerprint validation and anti-bot measures
+	ImpersonateCursor(client)
+
+	// First request to BidiAppend
+	resp, err := client.R().
+		SetContext(ctx.Request.Context()).
+		SetBody(buffer).
+		SetHeader("authorization", "Bearer "+cookie).
+		SetHeader("content-type", "application/proto").
+		SetHeader("connect-accept-encoding", "gzip").
+		SetHeader("connect-content-encoding", "gzip").
+		SetHeader("connect-protocol-version", "1").
+		SetHeader("traceparent", "00-"+strings.ReplaceAll(uuid.NewString(), "-", "")+"-"+common.Hex(16)+"-00").
+		SetHeader("x-amzn-trace-id", "Root="+uuid.NewString()).
+		SetHeader("x-client-key", genClientKey(ctx.GetString("token"))).
+		SetHeader("x-cursor-checksum", genChecksum(ctx, env)).
+		SetHeader("x-cursor-client-version", "0.48.9").
+		SetHeader("x-cursor-config-version", configVersion).
+		SetHeader("x-cursor-timezone", "Asia/Shanghai").
+		SetHeader("x-ghost-mode", "false").
+		SetHeader("x-new-onboarding-completed", "false").
+		SetHeader("x-session-id", sessionId).
+		SetHeader("host", "api2.cursor.sh").
+		SetHeader("Connection", "close").
+		SetHeader("Transfer-Encoding", "chunked").
+		Post("https://api2.cursor.sh/aiserver.v1.BidiService/BidiAppend")
+
 	if err != nil {
-		return
+		return nil, err
 	}
+
+	response = resp.Response
 
 	streamUnified := &StreamUnified{
 		Value: key,
@@ -94,32 +104,36 @@ func fetch(ctx *gin.Context, env *env.Environment, cookie string, buffer []byte)
 	header := int32ToBytes(0, len(buffer))
 	buffer = append(header, buffer...)
 
-	response, err = emit.ClientBuilder(common.HTTPClient).
-		Context(ctx.Request.Context()).
-		Proxies(env.GetString("server.proxied")).
-		POST("https://api2.cursor.sh/aiserver.v1.ChatService/StreamUnifiedChatWithToolsSSE").
-		Header("authorization", "Bearer "+cookie).
-		Header("content-type", "application/connect+proto").
-		Header("connect-accept-encoding", "gzip").
-		Header("connect-content-encoding", "gzip").
-		Header("connect-protocol-version", "1").
-		Header("traceparent", "00-"+strings.ReplaceAll(uuid.NewString(), "-", "")+"-"+common.Hex(16)+"-00").
-		Header("user-agent", "connect-es/1.6.1").
-		Header("x-amzn-trace-id", "Root="+uuid.NewString()).
-		Header("x-client-key", genClientKey(ctx.GetString("token"))).
-		Header("x-cursor-checksum", genChecksum(ctx, env)).
-		Header("x-cursor-client-version", "0.48.9").
-		Header("x-cursor-config-version", configVersion).
-		Header("x-cursor-timezone", "Asia/Shanghai").
-		Header("x-ghost-mode", "false").
-		Header("x-new-onboarding-completed", "false").
-		Header("x-request-id", uuid.NewString()).
-		Header("x-session-id", sessionId).
-		Header("host", "api2.cursor.sh").
-		Header("Connection", "close").
-		Header("Transfer-Encoding", "chunked").
-		Bytes(buffer).
-		DoC(emit.Status(http.StatusOK), emit.IsPROTO)
+	// Second request to StreamUnifiedChatWithToolsSSE
+	resp, err = client.R().
+		SetContext(ctx.Request.Context()).
+		SetBody(buffer).
+		SetHeader("authorization", "Bearer "+cookie).
+		SetHeader("content-type", "application/connect+proto").
+		SetHeader("connect-accept-encoding", "gzip").
+		SetHeader("connect-content-encoding", "gzip").
+		SetHeader("connect-protocol-version", "1").
+		SetHeader("traceparent", "00-"+strings.ReplaceAll(uuid.NewString(), "-", "")+"-"+common.Hex(16)+"-00").
+		SetHeader("x-amzn-trace-id", "Root="+uuid.NewString()).
+		SetHeader("x-client-key", genClientKey(ctx.GetString("token"))).
+		SetHeader("x-cursor-checksum", genChecksum(ctx, env)).
+		SetHeader("x-cursor-client-version", "0.48.9").
+		SetHeader("x-cursor-config-version", configVersion).
+		SetHeader("x-cursor-timezone", "Asia/Shanghai").
+		SetHeader("x-ghost-mode", "false").
+		SetHeader("x-new-onboarding-completed", "false").
+		SetHeader("x-request-id", uuid.NewString()).
+		SetHeader("x-session-id", sessionId).
+		SetHeader("host", "api2.cursor.sh").
+		SetHeader("Connection", "close").
+		SetHeader("Transfer-Encoding", "chunked").
+		Post("https://api2.cursor.sh/aiserver.v1.ChatService/StreamUnifiedChatWithToolsSSE")
+
+	if err != nil {
+		return nil, err
+	}
+
+	response = resp.Response
 	return
 }
 
@@ -246,20 +260,30 @@ func checkUsage(ctx *gin.Context, env *env.Environment, max int) (count int, err
 	if strings.Contains(cookie, "::") {
 		user = strings.Split(cookie, "::")[0]
 	}
-	response, err := emit.ClientBuilder(common.HTTPClient).
-		Context(ctx.Request.Context()).
-		Proxies(env.GetString("server.proxied")).
-		GET("https://www.cursor.com/api/usage").
-		Query("user", user).
-		Header("cookie", "WorkosCursorSessionToken="+cookie).
-		Header("referer", "https://www.cursor.com/settings").
-		Header("user-agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Safari/605.1.15").
-		DoC(emit.Status(http.StatusOK), emit.IsJSON)
+
+	// Create req client and impersonate Chrome
+	client := req.C().
+		SetProxyURL(env.GetString("server.proxied"))
+	// Impersonate Chrome browser to bypass anti-crawler detection
+	// This mocks full HTTP fingerprint including TLS, headers, and other browser characteristics
+	// which helps bypass server-side fingerprint validation and anti-bot measures
+	client.ImpersonateChrome()
+
+	// Make request to usage API
+	resp, err := client.R().
+		SetContext(ctx.Request.Context()).
+		SetQueryParam("user", user).
+		SetHeader("cookie", "WorkosCursorSessionToken="+cookie).
+		SetHeader("referer", "https://www.cursor.com/settings").
+		Get("https://www.cursor.com/api/usage")
+
 	if err != nil {
 		return
 	}
-	defer response.Body.Close()
-	obj, err := emit.ToMap(response)
+
+	// Parse response
+	var obj map[string]interface{}
+	err = resp.UnmarshalJson(&obj)
 	if err != nil {
 		return
 	}
