@@ -169,17 +169,18 @@ func convertRequest(completion model.Completion) (buffer []byte, err error) {
 	instructionText := strings.Join(systemInstructions, "\n")
 
 	// Add combined system messages as a user message
-	if len(systemInstructions) > 0 {
-		systemAsUser := &ChatMessage_Content_Message{
-			Empty51:        &Empty,
-			Uid:            mid,
-			Value:          strings.Join(systemInstructions, "\n"),
-			UnknownField2:  1,
-			UnknownField29: 1,
-			Role:           1, // 1 represents user role
-		}
-		regularMessages = append([]*ChatMessage_Content_Message{systemAsUser}, regularMessages...)
-	}
+	//if len(systemInstructions) > 0 {
+	//	systemAsUser := &ChatMessage_Content_Message{
+	//		Empty51:        &Empty,
+	//		Uid:            mid,
+	//		Value:          strings.Join(systemInstructions, "\n"),
+	//		UnknownField2:  1,
+	//		UnknownField29: 1,
+	//		Role:           1, // 1 represents user role
+	//	}
+	//	regularMessages = append([]*ChatMessage_Content_Message{systemAsUser}, regularMessages...)
+	//}
+	var oneNum uint32 = 1
 
 	message := &ChatMessage{
 		Content: &ChatMessage_Content{
@@ -224,7 +225,7 @@ func convertRequest(completion model.Completion) (buffer []byte, err error) {
 			UnknownField48: &Zero,
 			UnknownField49: &Zero,
 			UnknownField51: &Zero,
-			UnknownField53: &Zero,
+			UnknownField53: &oneNum,
 			Agent:          "Ask",
 		},
 	}
