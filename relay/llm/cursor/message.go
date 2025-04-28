@@ -160,16 +160,10 @@ func waitResponse(ctx *gin.Context, r *http.Response, sse bool) (content string)
 
 	reader := bufio.NewReader(r.Body)
 
-	// Set response headers for streaming
-	if sse {
-		ctx.Writer.Header().Set("Content-Type", "text/event-stream")
-		ctx.Writer.Header().Set("Cache-Control", "no-cache")
-		ctx.Writer.Header().Set("Connection", "keep-alive")
-		ctx.Writer.WriteHeader(http.StatusOK)
-	}
-
 	var aggregatedContent string // For non-streaming mode
 	var finalID string
+
+	isFirst := true
 
 	for {
 		// 读取消息头
@@ -216,6 +210,14 @@ func waitResponse(ctx *gin.Context, r *http.Response, sse bool) (content string)
 				id := uuid.NewString()
 				if finalID == "" {
 					finalID = id
+				}
+
+				if isFirst {
+					ctx.Writer.Header().Set("Content-Type", "text/event-stream")
+					ctx.Writer.Header().Set("Cache-Control", "no-cache")
+					ctx.Writer.Header().Set("Connection", "keep-alive")
+					ctx.Writer.WriteHeader(http.StatusOK)
+					isFirst = false
 				}
 
 				sseMessage := map[string]interface{}{
@@ -289,8 +291,7 @@ func waitResponse(ctx *gin.Context, r *http.Response, sse bool) (content string)
 			}
 
 			if sse {
-				ctx.Writer.WriteString("data: [DONE]\n\n")
-				ctx.Writer.Flush()
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": chunkErr.Error()})
 				return
 			} else {
 				if len(aggregatedContent) <= 0 {
