@@ -58,6 +58,11 @@ func fetch(ctx *gin.Context, env *env.Environment, cookie string, buffer []byte)
 	// Create a req client with Chrome fingerprint
 	client := req.DevMode()
 
+	proxyUrl := ctx.GetHeader("proxyUrl")
+	if proxyUrl != "" {
+		client.SetProxyURL(proxyUrl)
+	}
+
 	// Impersonate Chrome browser to bypass anti-crawler detection
 	// This mocks full HTTP fingerprint including TLS, headers, and other browser characteristics
 	// which helps bypass server-side fingerprint validation and anti-bot measures
