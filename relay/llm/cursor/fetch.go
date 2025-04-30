@@ -130,7 +130,6 @@ func fetch(ctx *gin.Context, env *env.Environment, cookie string, buffer []byte)
 		SetHeader("x-request-id", uuid.NewString()).
 		SetHeader("x-session-id", sessionId).
 		SetHeader("host", "api2.cursor.sh").
-		SetHeader("Connection", "close").
 		SetHeader("Transfer-Encoding", "chunked").
 		Post("https://api2.cursor.sh/aiserver.v1.ChatService/StreamUnifiedChatWithToolsSSE")
 
