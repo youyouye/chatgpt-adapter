@@ -4,12 +4,12 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"github.com/imroc/req/v3"
+	utls "github.com/refraction-networking/utls"
 	"math/big"
 	"strconv"
 	"strings"
 
 	"github.com/imroc/req/v3/http2"
-	utls "github.com/refraction-networking/utls"
 )
 
 // Identical for both Blink-based browsers (Chrome, Chromium, etc.) and WebKit-based browsers (Safari, etc.)
@@ -110,7 +110,7 @@ var (
 		//"sec-ch-ua-mobile":          "?0",
 		//"sec-ch-ua-platform":        `"macOS"`,
 		//"upgrade-insecure-requests": "1",
-		//"user-agent":                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+		"user-agent": "connect-es/1.6.1",
 		//"accept":                    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
 		//"sec-fetch-site":            "none",
 		//"sec-fetch-mode":            "navigate",
@@ -131,10 +131,10 @@ func ImpersonateCursor(c *req.Client) {
 	c.
 		SetTLSFingerprint(utls.HelloRandomizedNoALPN).
 		SetHTTP2SettingsFrame(chromeHttp2Settings...).
-		SetHTTP2ConnectionFlow(15663105)
-	//SetCommonPseudoHeaderOder(chromePseudoHeaderOrder...)
-	//SetCommonHeaderOrder(chromeHeaderOrder...).
-	//SetCommonHeaders(chromeHeaders).
+		SetHTTP2ConnectionFlow(15663105).
+		//SetCommonPseudoHeaderOder(chromePseudoHeaderOrder...)
+		//SetCommonHeaderOrder(chromeHeaderOrder...).
+		SetCommonHeaders(chromeHeaders)
 	//SetHTTP2HeaderPriority(chromeHeaderPriority).
 	//SetMultipartBoundaryFunc(webkitMultipartBoundaryFunc)
 }
