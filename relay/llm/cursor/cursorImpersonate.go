@@ -243,7 +243,7 @@ func (c *uTLSConn) ConnectionState() tls.ConnectionState {
 
 func ImpersonateCursorRandom(c *req.Client) {
 	c.
-		SetTLSFingerprint(utls.HelloCustom).
+		SetTLSFingerprint(utls.HelloRandomizedNoALPN).
 		SetHTTP2SettingsFrame(chromeHttp2Settings...).
 		SetHTTP2ConnectionFlow(15663105).
 		SetCommonHeaders(chromeHeaders)

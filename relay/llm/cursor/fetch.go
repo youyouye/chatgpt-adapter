@@ -57,11 +57,11 @@ func fetch(ctx *gin.Context, env *env.Environment, cookie string, buffer []byte)
 
 	// Create a req client with Chrome fingerprint
 	client := req.DevMode()
-
-	proxyUrl := ctx.GetHeader("proxyUrl")
-	if proxyUrl != "" {
-		client.SetProxyURL(proxyUrl)
-	}
+	client.SetProxyURL("http://t14580892269891:n9k5hlwe@m919.kdltpspro.com:15818")
+	//proxyUrl := ctx.GetHeader("proxyUrl")
+	//if proxyUrl != "" {
+	//	client.SetProxyURL(proxyUrl)
+	//}
 
 	// Impersonate Chrome browser to bypass anti-crawler detection
 	// This mocks full HTTP fingerprint including TLS, headers, and other browser characteristics
@@ -107,10 +107,7 @@ func fetch(ctx *gin.Context, env *env.Environment, cookie string, buffer []byte)
 	}
 
 	client2 := req.DevMode()
-
-	if proxyUrl != "" {
-		client2.SetProxyURL(proxyUrl)
-	}
+	client2.SetProxyURL("http://t14580892269891:n9k5hlwe@m919.kdltpspro.com:15818")
 
 	// Impersonate Chrome browser to bypass anti-crawler detection
 	// This mocks full HTTP fingerprint including TLS, headers, and other browser characteristics
