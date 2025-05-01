@@ -57,16 +57,16 @@ func fetch(ctx *gin.Context, env *env.Environment, cookie string, buffer []byte)
 
 	// Create a req client with Chrome fingerprint
 	client := req.DevMode()
-	client.SetProxyURL("http://t14580892269891:n9k5hlwe@m919.kdltpspro.com:15818")
-	//proxyUrl := ctx.GetHeader("proxyUrl")
-	//if proxyUrl != "" {
-	//	client.SetProxyURL(proxyUrl)
-	//}
+	//client.SetProxyURL("http://t14580892269891:n9k5hlwe@m919.kdltpspro.com:15818")
+	proxyUrl := ctx.GetHeader("proxyUrl")
+	if proxyUrl != "" {
+		client.SetProxyURL(proxyUrl)
+	}
 
 	// Impersonate Chrome browser to bypass anti-crawler detection
 	// This mocks full HTTP fingerprint including TLS, headers, and other browser characteristics
 	// which helps bypass server-side fingerprint validation and anti-bot measures
-	ImpersonateCursorRandom(client)
+	ImpersonateCursor(client)
 
 	// First request to BidiAppend
 	resp, err := client.R().
@@ -107,7 +107,11 @@ func fetch(ctx *gin.Context, env *env.Environment, cookie string, buffer []byte)
 	}
 
 	client2 := req.DevMode()
-	client2.SetProxyURL("http://t14580892269891:n9k5hlwe@m919.kdltpspro.com:15818")
+	//client2.SetProxyURL("http://t14580892269891:n9k5hlwe@m919.kdltpspro.com:15818")
+	//proxyUrl := ctx.GetHeader("proxyUrl")
+	if proxyUrl != "" {
+		client2.SetProxyURL(proxyUrl)
+	}
 
 	// Impersonate Chrome browser to bypass anti-crawler detection
 	// This mocks full HTTP fingerprint including TLS, headers, and other browser characteristics
