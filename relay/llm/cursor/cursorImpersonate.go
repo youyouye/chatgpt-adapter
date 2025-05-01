@@ -129,43 +129,42 @@ var (
 	}
 )
 
-func buildExtensionsFromJA3(extStr, curvesStr, pointFmtStr string) []utls.TLSExtension {
-	var exts []utls.TLSExtension
+func buildExtensionsFromJA3(extensionsStr, ellipticCurvesStr, ellipticCurvePointFormatsStr string) []utls.TLSExtension {
+	var extensions []utls.TLSExtension
 
-	// 解析曲线
-	var curves []utls.CurveID
-	if curvesStr != "" {
-		for _, c := range strings.Split(curvesStr, "-") {
-			id, _ := strconv.Atoi(c)
-			curves = append(curves, utls.CurveID(id))
-		}
-	}
+	// 解析扩展类型
+	if extensionsStr != "" {
+		for _, extStr := range strings.Split(extensionsStr, "-") {
+			extID, _ := strconv.Atoi(extStr)
 
-	// 解析点格式
-	var pointFormats []byte
-	if pointFmtStr != "" {
-		for _, p := range strings.Split(pointFmtStr, "-") {
-			id, _ := strconv.Atoi(p)
-			pointFormats = append(pointFormats, byte(id))
-		}
-	}
-
-	// 解析扩展
-	if extStr != "" {
-		for _, e := range strings.Split(extStr, "-") {
-			id, _ := strconv.Atoi(e)
-
-			switch uint16(id) {
+			// 根据扩展ID创建对应的扩展
+			switch uint16(extID) {
 			case 0: // SNI
-				exts = append(exts, &utls.SNIExtension{})
+				extensions = append(extensions, &utls.SNIExtension{})
 			case 5: // StatusRequest
-				exts = append(exts, &utls.StatusRequestExtension{})
+				extensions = append(extensions, &utls.StatusRequestExtension{})
 			case 10: // SupportedCurves
-				exts = append(exts, &utls.SupportedCurvesExtension{Curves: curves})
-			case 11: // SupportedPoints
-				exts = append(exts, &utls.SupportedPointsExtension{SupportedPoints: pointFormats})
+				// 解析椭圆曲线
+				var curves []utls.CurveID
+				if ellipticCurvesStr != "" {
+					for _, c := range strings.Split(ellipticCurvesStr, "-") {
+						id, _ := strconv.Atoi(c)
+						curves = append(curves, utls.CurveID(uint16(id)))
+					}
+				}
+				extensions = append(extensions, &utls.SupportedCurvesExtension{Curves: curves})
+			case 11: // ECPointFormats
+				// 解析椭圆曲线点格式
+				var formats []byte
+				if ellipticCurvePointFormatsStr != "" {
+					for _, f := range strings.Split(ellipticCurvePointFormatsStr, "-") {
+						id, _ := strconv.Atoi(f)
+						formats = append(formats, byte(id))
+					}
+				}
+				extensions = append(extensions, &utls.SupportedPointsExtension{SupportedPoints: formats})
 			case 13: // SignatureAlgorithms
-				exts = append(exts, &utls.SignatureAlgorithmsExtension{
+				extensions = append(extensions, &utls.SignatureAlgorithmsExtension{
 					SupportedSignatureAlgorithms: []utls.SignatureScheme{
 						utls.ECDSAWithP256AndSHA256,
 						utls.PSSWithSHA256,
@@ -178,44 +177,37 @@ func buildExtensionsFromJA3(extStr, curvesStr, pointFmtStr string) []utls.TLSExt
 					},
 				})
 			case 16: // ALPN
-				exts = append(exts, &utls.ALPNExtension{
+				extensions = append(extensions, &utls.ALPNExtension{
 					AlpnProtocols: []string{"h2", "http/1.1"},
 				})
-			case 18: // SCT
-				exts = append(exts, &utls.SCTExtension{})
-			case 21: // PaddingExtension
-				exts = append(exts, &utls.UtlsPaddingExtension{GetPaddingLen: utls.BoringPaddingStyle})
 			case 23: // ExtendedMasterSecret
-				exts = append(exts, &utls.UtlsExtendedMasterSecretExtension{})
+				extensions = append(extensions, &utls.UtlsExtendedMasterSecretExtension{})
 			case 35: // SessionTicket
-				exts = append(exts, &utls.SessionTicketExtension{})
+				extensions = append(extensions, &utls.SessionTicketExtension{})
 			case 43: // SupportedVersions
-				exts = append(exts, &utls.SupportedVersionsExtension{
-					Versions: []uint16{utls.VersionTLS13, utls.VersionTLS12},
+				extensions = append(extensions, &utls.SupportedVersionsExtension{
+					Versions: []uint16{tls.VersionTLS13, tls.VersionTLS12, tls.VersionTLS11, tls.VersionTLS10},
 				})
 			case 45: // PSKKeyExchangeModes
-				exts = append(exts, &utls.PSKKeyExchangeModesExtension{
-					Modes: []uint8{utls.PskModeDHE},
+				extensions = append(extensions, &utls.PSKKeyExchangeModesExtension{
+					Modes: []uint8{1}, // PSK with (EC)DHE key establishment
 				})
 			case 51: // KeyShare
-				exts = append(exts, &utls.KeyShareExtension{
+				extensions = append(extensions, &utls.KeyShareExtension{
 					KeyShares: []utls.KeyShare{
 						{Group: utls.X25519},
 						{Group: utls.CurveP256},
 					},
 				})
 			case 65281: // RenegotiationInfo
-				exts = append(exts, &utls.RenegotiationInfoExtension{
+				extensions = append(extensions, &utls.RenegotiationInfoExtension{
 					Renegotiation: utls.RenegotiateOnceAsClient,
 				})
-			default:
-				// 对于未知或不支持的扩展，添加空扩展
-				exts = append(exts, &utls.GenericExtension{Id: uint16(id)})
 			}
 		}
 	}
 
-	return exts
+	return extensions
 }
 
 // 定义uTLSConn包装utls.UConn
@@ -241,6 +233,197 @@ func (c *uTLSConn) ConnectionState() tls.ConnectionState {
 	}
 }
 
+func parseJA4Fingerprint(ja4String string) (tlsVersion uint16, cipherSuites []uint16, extensions []utls.TLSExtension, alpn []string) {
+	parts := strings.Split(ja4String, "_")
+
+	// 解析TLS版本
+	if len(parts) > 0 {
+		switch parts[0] {
+		case "t10":
+			tlsVersion = tls.VersionTLS10
+		case "t11":
+			tlsVersion = tls.VersionTLS11
+		case "t12":
+			tlsVersion = tls.VersionTLS12
+		case "t13":
+			tlsVersion = tls.VersionTLS13
+		default:
+			tlsVersion = tls.VersionTLS13 // 默认
+		}
+	}
+
+	// 解析密码套件
+	if len(parts) > 1 && parts[1] != "" {
+		suitesHex := strings.Split(parts[1], "")
+		for i := 0; i < len(suitesHex); i += 4 {
+			if i+4 <= len(suitesHex) {
+				hexStr := strings.Join(suitesHex[i:i+4], "")
+				if hexVal, err := strconv.ParseUint(hexStr, 16, 16); err == nil {
+					cipherSuites = append(cipherSuites, uint16(hexVal))
+				}
+			}
+		}
+	}
+
+	// 解析扩展
+	if len(parts) > 2 && parts[2] != "" {
+		extCodes := strings.Split(parts[2], "")
+		for _, code := range extCodes {
+			// 将JA4扩展代码映射到实际的TLS扩展
+			ext := mapJA4ExtensionToTLS(code)
+			if ext != nil {
+				extensions = append(extensions, ext)
+			}
+		}
+	}
+
+	// 解析ALPN
+	if len(parts) > 3 && parts[3] != "" {
+		alpnCodes := strings.Split(parts[3], "")
+		for _, code := range alpnCodes {
+			protocol := mapJA4ALPNToProtocol(code)
+			if protocol != "" {
+				alpn = append(alpn, protocol)
+			}
+		}
+	}
+
+	return
+}
+
+// 将JA4扩展代码映射到实际的TLS扩展
+func mapJA4ExtensionToTLS(extCode string) utls.TLSExtension {
+	switch extCode {
+	case "0": // SNI
+		return &utls.SNIExtension{}
+	case "1": // StatusRequest
+		return &utls.StatusRequestExtension{}
+	case "2": // SupportedCurves
+		return &utls.SupportedCurvesExtension{
+			Curves: []utls.CurveID{
+				utls.X25519,
+				utls.CurveP256,
+				utls.CurveP384,
+			},
+		}
+	case "3": // ECPointFormats
+		return &utls.SupportedPointsExtension{SupportedPoints: []byte{0}}
+	case "4": // SignatureAlgorithms
+		return &utls.SignatureAlgorithmsExtension{
+			SupportedSignatureAlgorithms: []utls.SignatureScheme{
+				utls.ECDSAWithP256AndSHA256,
+				utls.PSSWithSHA256,
+				utls.PKCS1WithSHA256,
+				utls.ECDSAWithP384AndSHA384,
+				utls.PSSWithSHA384,
+				utls.PKCS1WithSHA384,
+				utls.PSSWithSHA512,
+				utls.PKCS1WithSHA512,
+			},
+		}
+	case "5": // ALPN
+		return &utls.ALPNExtension{}
+	case "6": // ExtendedMasterSecret
+		return &utls.UtlsExtendedMasterSecretExtension{}
+	case "7": // SessionTicket
+		return &utls.SessionTicketExtension{}
+	case "8": // SupportedVersions
+		return &utls.SupportedVersionsExtension{
+			Versions: []uint16{
+				tls.VersionTLS13,
+				tls.VersionTLS12,
+				tls.VersionTLS11,
+				tls.VersionTLS10,
+			},
+		}
+	case "9": // PSKKeyExchangeModes
+		return &utls.PSKKeyExchangeModesExtension{
+			Modes: []uint8{1}, // PSK with (EC)DHE key establishment
+		}
+	case "A": // KeyShare
+		return &utls.KeyShareExtension{
+			KeyShares: []utls.KeyShare{
+				{Group: utls.X25519},
+				{Group: utls.CurveP256},
+			},
+		}
+	case "B": // RenegotiationInfo
+		return &utls.RenegotiationInfoExtension{
+			Renegotiation: utls.RenegotiateOnceAsClient,
+		}
+	case "G": // GREASE
+		return &utls.UtlsGREASEExtension{}
+	// 可以继续添加更多的扩展映射
+	default:
+		return nil
+	}
+}
+
+// 将JA4 ALPN代码映射到实际的协议
+func mapJA4ALPNToProtocol(alpnCode string) string {
+	switch alpnCode {
+	case "h":
+		return "h2"
+	case "H":
+		return "http/1.1"
+	case "s":
+		return "spdy/3.1"
+	case "q":
+		return "quic"
+	case "Q":
+		return "hq"
+	// 添加更多的ALPN协议映射
+	default:
+		return ""
+	}
+}
+
+// 使用JA4指纹创建TLS配置
+func createTLSConfigFromJA4(ja4String string) (*utls.Config, *utls.ClientHelloSpec) {
+	tlsVersion, cipherSuites, extensions, alpnProtocols := parseJA4Fingerprint(ja4String)
+
+	// 如果解析出了ALPN协议，更新ALPN扩展
+	for i, ext := range extensions {
+		if alpnExt, ok := ext.(*utls.ALPNExtension); ok && len(alpnProtocols) > 0 {
+			alpnExt.AlpnProtocols = alpnProtocols
+			extensions[i] = alpnExt
+			break
+		}
+	}
+
+	// 如果没有找到ALPN扩展但有ALPN协议，添加一个ALPN扩展
+	hasAlpnExt := false
+	for _, ext := range extensions {
+		if _, ok := ext.(*utls.ALPNExtension); ok {
+			hasAlpnExt = true
+			break
+		}
+	}
+
+	if !hasAlpnExt && len(alpnProtocols) > 0 {
+		extensions = append(extensions, &utls.ALPNExtension{
+			AlpnProtocols: alpnProtocols,
+		})
+	}
+
+	// 创建ClientHelloSpec
+	spec := &utls.ClientHelloSpec{
+		TLSVersMin:         tls.VersionTLS10,
+		TLSVersMax:         tlsVersion,
+		CipherSuites:       cipherSuites,
+		CompressionMethods: []byte{0},
+		Extensions:         extensions,
+	}
+
+	// 创建TLS配置
+	config := &utls.Config{
+		NextProtos:         alpnProtocols,
+		InsecureSkipVerify: true, // 根据需要调整
+	}
+
+	return config, spec
+}
+
 func ImpersonateCursorRandom(c *req.Client) {
 	c.
 		SetTLSFingerprint(utls.HelloRandomizedNoALPN).
@@ -256,45 +439,22 @@ func ImpersonateCursor(c *req.Client) {
 		SetHTTP2ConnectionFlow(15663105).
 		SetCommonHeaders(chromeHeaders)
 
-	// 解析JA3指纹
-	ja3 := "771,4865-4866-4867-49199-49195-49200-49196-49191-52393-52392-49161-49171-49162-49172-156-157-47-53,0-23-65281-10-11-35-13-51-45-43-21-41,29-23-24,0"
-	parts := strings.Split(ja3, ",")
+	ja4String := "t13d1812h2_002f,0035,009c,009d,1301,1302,1303,c009,c00a,c013,c014,c027,c02b,c02c,c02f,c030,cca8,cca9_000a,000b,000d,0015,0017,0023,002b,002d,0033,ff01_0403,0804,0401,0503,0805,0501,0806,0601,0201"
 
-	// 解析密码套件
-	cipherSuites := []uint16{}
-	if parts[1] != "" {
-		for _, c := range strings.Split(parts[1], "-") {
-			id, _ := strconv.Atoi(c)
-			cipherSuites = append(cipherSuites, uint16(id))
-		}
-	}
-
-	// 创建自定义指纹处理函数
 	tlsHandshakeFn := func(ctx context.Context, addr string, plainConn net.Conn) (conn net.Conn, tlsState *tls.ConnectionState, err error) {
 		colonPos := strings.LastIndex(addr, ":")
 		if colonPos == -1 {
 			colonPos = len(addr)
 		}
 		hostname := addr[:colonPos]
-		tlsConfig := c.GetTLSClientConfig()
-		utlsConfig := &utls.Config{
-			ServerName:         hostname,
-			InsecureSkipVerify: tlsConfig.InsecureSkipVerify,
-			// 其他配置项
-		}
+
+		// 从JA4创建TLS配置
+		utlsConfig, clientHelloSpec := createTLSConfigFromJA4(ja4String)
+		utlsConfig.ServerName = hostname
 
 		uconn := utls.UClient(plainConn, utlsConfig, utls.HelloCustom)
 
-		// 设置Hello参数
-		spec := &utls.ClientHelloSpec{
-			TLSVersMin:         tls.VersionTLS10, // 0x0301
-			TLSVersMax:         tls.VersionTLS13, // 0x0303
-			CipherSuites:       cipherSuites,
-			CompressionMethods: []byte{0},
-			Extensions:         buildExtensionsFromJA3(parts[2], parts[3], parts[4]),
-		}
-
-		if err = uconn.ApplyPreset(spec); err != nil {
+		if err = uconn.ApplyPreset(clientHelloSpec); err != nil {
 			return nil, nil, err
 		}
 
