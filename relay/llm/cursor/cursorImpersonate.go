@@ -1,14 +1,12 @@
 package cursor
 
 import (
-	"context"
 	"crypto/rand"
 	"crypto/tls"
 	"encoding/binary"
 	"github.com/imroc/req/v3"
 	utls "github.com/refraction-networking/utls"
 	"math/big"
-	"net"
 	"strconv"
 	"strings"
 
@@ -244,79 +242,79 @@ func (c *uTLSConn) ConnectionState() tls.ConnectionState {
 // ImpersonateCursor impersonates Chrome browser (version 120).
 func ImpersonateCursor(c *req.Client) {
 	c.
-		SetTLSFingerprint(utls.HelloCustom).
+		SetTLSFingerprint(utls.HelloRandomizedNoALPN).
 		SetHTTP2SettingsFrame(chromeHttp2Settings...).
 		SetHTTP2ConnectionFlow(15663105).
 		SetCommonHeaders(chromeHeaders)
 
-	// 解析JA3指纹
-	ja3 := "771,4865-4866-4867-49199-49195-49200-49196-49191-52393-52392-49161-49171-49162-49172-156-157-47-53,0-23-65281-10-11-35-16-13-51-45-43-21,29-23-24,0"
-	parts := strings.Split(ja3, ",")
-
-	// 解析密码套件
-	cipherSuites := []uint16{}
-	if parts[1] != "" {
-		for _, c := range strings.Split(parts[1], "-") {
-			id, _ := strconv.Atoi(c)
-			cipherSuites = append(cipherSuites, uint16(id))
-		}
-	}
-
-	// 创建自定义指纹处理函数
-	tlsHandshakeFn := func(ctx context.Context, addr string, plainConn net.Conn) (conn net.Conn, tlsState *tls.ConnectionState, err error) {
-		colonPos := strings.LastIndex(addr, ":")
-		if colonPos == -1 {
-			colonPos = len(addr)
-		}
-		hostname := addr[:colonPos]
-		tlsConfig := c.GetTLSClientConfig()
-		utlsConfig := &utls.Config{
-			ServerName:         hostname,
-			InsecureSkipVerify: tlsConfig.InsecureSkipVerify,
-			// 其他配置项
-		}
-
-		uconn := utls.UClient(plainConn, utlsConfig, utls.HelloCustom)
-
-		// 设置Hello参数
-		spec := &utls.ClientHelloSpec{
-			TLSVersMin:         tls.VersionTLS10, // 0x0301
-			TLSVersMax:         tls.VersionTLS13, // 0x0303
-			CipherSuites:       cipherSuites,
-			CompressionMethods: []byte{0},
-			Extensions:         buildExtensionsFromJA3(parts[2], parts[3], parts[4]),
-		}
-
-		if err = uconn.ApplyPreset(spec); err != nil {
-			return nil, nil, err
-		}
-
-		uTLSConn := &uTLSConn{uconn}
-		err = uTLSConn.HandshakeContext(ctx)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		cs := uconn.ConnectionState()
-		conn = uTLSConn
-		tlsState = &tls.ConnectionState{
-			Version:                     cs.Version,
-			HandshakeComplete:           cs.HandshakeComplete,
-			DidResume:                   cs.DidResume,
-			CipherSuite:                 cs.CipherSuite,
-			NegotiatedProtocol:          cs.NegotiatedProtocol,
-			NegotiatedProtocolIsMutual:  cs.NegotiatedProtocolIsMutual,
-			ServerName:                  cs.ServerName,
-			PeerCertificates:            cs.PeerCertificates,
-			VerifiedChains:              cs.VerifiedChains,
-			SignedCertificateTimestamps: cs.SignedCertificateTimestamps,
-			OCSPResponse:                cs.OCSPResponse,
-			TLSUnique:                   cs.TLSUnique,
-		}
-		return
-	}
-
-	c.Transport.SetTLSHandshake(tlsHandshakeFn)
+	//// 解析JA3指纹
+	//ja3 := "771,4865-4866-4867-49199-49195-49200-49196-49191-52393-52392-49161-49171-49162-49172-156-157-47-53,0-23-65281-10-11-35-16-13-51-45-43-21,29-23-24,0"
+	//parts := strings.Split(ja3, ",")
+	//
+	//// 解析密码套件
+	//cipherSuites := []uint16{}
+	//if parts[1] != "" {
+	//	for _, c := range strings.Split(parts[1], "-") {
+	//		id, _ := strconv.Atoi(c)
+	//		cipherSuites = append(cipherSuites, uint16(id))
+	//	}
+	//}
+	//
+	//// 创建自定义指纹处理函数
+	//tlsHandshakeFn := func(ctx context.Context, addr string, plainConn net.Conn) (conn net.Conn, tlsState *tls.ConnectionState, err error) {
+	//	colonPos := strings.LastIndex(addr, ":")
+	//	if colonPos == -1 {
+	//		colonPos = len(addr)
+	//	}
+	//	hostname := addr[:colonPos]
+	//	tlsConfig := c.GetTLSClientConfig()
+	//	utlsConfig := &utls.Config{
+	//		ServerName:         hostname,
+	//		InsecureSkipVerify: tlsConfig.InsecureSkipVerify,
+	//		// 其他配置项
+	//	}
+	//
+	//	uconn := utls.UClient(plainConn, utlsConfig, utls.HelloCustom)
+	//
+	//	// 设置Hello参数
+	//	spec := &utls.ClientHelloSpec{
+	//		TLSVersMin:         tls.VersionTLS10, // 0x0301
+	//		TLSVersMax:         tls.VersionTLS13, // 0x0303
+	//		CipherSuites:       cipherSuites,
+	//		CompressionMethods: []byte{0},
+	//		Extensions:         buildExtensionsFromJA3(parts[2], parts[3], parts[4]),
+	//	}
+	//
+	//	if err = uconn.ApplyPreset(spec); err != nil {
+	//		return nil, nil, err
+	//	}
+	//
+	//	uTLSConn := &uTLSConn{uconn}
+	//	err = uTLSConn.HandshakeContext(ctx)
+	//	if err != nil {
+	//		return nil, nil, err
+	//	}
+	//
+	//	cs := uconn.ConnectionState()
+	//	conn = uTLSConn
+	//	tlsState = &tls.ConnectionState{
+	//		Version:                     cs.Version,
+	//		HandshakeComplete:           cs.HandshakeComplete,
+	//		DidResume:                   cs.DidResume,
+	//		CipherSuite:                 cs.CipherSuite,
+	//		NegotiatedProtocol:          cs.NegotiatedProtocol,
+	//		NegotiatedProtocolIsMutual:  cs.NegotiatedProtocolIsMutual,
+	//		ServerName:                  cs.ServerName,
+	//		PeerCertificates:            cs.PeerCertificates,
+	//		VerifiedChains:              cs.VerifiedChains,
+	//		SignedCertificateTimestamps: cs.SignedCertificateTimestamps,
+	//		OCSPResponse:                cs.OCSPResponse,
+	//		TLSUnique:                   cs.TLSUnique,
+	//	}
+	//	return
+	//}
+	//
+	//c.Transport.SetTLSHandshake(tlsHandshakeFn)
 }
 
 var (
