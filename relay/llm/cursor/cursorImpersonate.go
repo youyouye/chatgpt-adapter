@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"encoding/binary"
+	"fmt"
 	"github.com/imroc/req/v3"
 	utls "github.com/refraction-networking/utls"
 	"math/big"
@@ -432,6 +433,181 @@ func ImpersonateCursorRandom(c *req.Client) {
 		SetCommonHeaders(chromeHeaders)
 }
 
+func buildClientHelloSpecFromFingerprints(ja3String, ja4String, hostname string) *utls.ClientHelloSpec {
+	// 解析JA3
+	ja3Parts := strings.Split(ja3String, ",")
+
+	// 解析TLS版本
+	tlsVers := uint16(tls.VersionTLS12) // 默认值
+	if len(ja3Parts) > 0 {
+		if v, err := strconv.Atoi(ja3Parts[0]); err == nil {
+			if v == 771 {
+				tlsVers = tls.VersionTLS12
+			} else if v == 772 {
+				tlsVers = tls.VersionTLS13
+			}
+		}
+	}
+
+	// 解析JA3密码套件
+	var cipherSuites []uint16
+	if len(ja3Parts) > 1 && ja3Parts[1] != "" {
+		for _, c := range strings.Split(ja3Parts[1], "-") {
+			if id, err := strconv.Atoi(c); err == nil {
+				cipherSuites = append(cipherSuites, uint16(id))
+			}
+		}
+	}
+
+	// 解析JA3扩展
+	var ja3Extensions []string
+	if len(ja3Parts) > 2 {
+		ja3Extensions = strings.Split(ja3Parts[2], "-")
+	}
+
+	// 解析JA3椭圆曲线
+	var curves []utls.CurveID
+	if len(ja3Parts) > 3 && ja3Parts[3] != "" {
+		for _, c := range strings.Split(ja3Parts[3], "-") {
+			if id, err := strconv.Atoi(c); err == nil {
+				curves = append(curves, utls.CurveID(uint16(id)))
+			}
+		}
+	}
+
+	// 解析JA3椭圆曲线点格式
+	var pointFormats []byte
+	if len(ja3Parts) > 4 && ja3Parts[4] != "" {
+		for _, p := range strings.Split(ja3Parts[4], "-") {
+			if id, err := strconv.Atoi(p); err == nil {
+				pointFormats = append(pointFormats, byte(id))
+			}
+		}
+	}
+
+	// 解析JA4
+	ja4Parts := strings.Split(ja4String, "_")
+
+	// 从JA4解析TLS版本
+	if len(ja4Parts) > 0 {
+		if strings.HasPrefix(ja4Parts[0], "t13") {
+			tlsVers = tls.VersionTLS13
+		} else if strings.HasPrefix(ja4Parts[0], "t12") {
+			tlsVers = tls.VersionTLS12
+		}
+	}
+
+	// 从JA4解析ALPN协议
+	var alpnProtocols []string
+	if len(ja4Parts) > 0 {
+		// 检查JA4字符串中是否包含h2标记
+		if strings.Contains(ja4Parts[0], "h2") {
+			alpnProtocols = append(alpnProtocols, "h2")
+		}
+		// 可能还有其他ALPN协议
+		if strings.Contains(ja4Parts[0], "http/1.1") || strings.Contains(ja4Parts[0], "h1") {
+			alpnProtocols = append(alpnProtocols, "http/1.1")
+		}
+	}
+
+	// 构建扩展列表
+	extensions := []utls.TLSExtension{
+		&utls.SNIExtension{ServerName: hostname},
+	}
+
+	// 确保包含必要的扩展
+	hasAlpn := false
+	hasCurves := false
+	hasPoints := false
+
+	// 处理JA3指定的扩展
+	for _, extStr := range ja3Extensions {
+		extID, _ := strconv.Atoi(extStr)
+
+		switch uint16(extID) {
+		case 0: // SNI - 已添加
+			continue
+		case 5: // Status Request
+			extensions = append(extensions, &utls.StatusRequestExtension{})
+		case 10: // Supported Curves
+			hasCurves = true
+			extensions = append(extensions, &utls.SupportedCurvesExtension{Curves: curves})
+		case 11: // EC Point Formats
+			hasPoints = true
+			extensions = append(extensions, &utls.SupportedPointsExtension{SupportedPoints: pointFormats})
+		case 13: // Signature Algorithms
+			extensions = append(extensions, &utls.SignatureAlgorithmsExtension{
+				SupportedSignatureAlgorithms: []utls.SignatureScheme{
+					utls.ECDSAWithP256AndSHA256,
+					utls.PSSWithSHA256,
+					utls.PKCS1WithSHA256,
+					utls.ECDSAWithP384AndSHA384,
+					utls.PSSWithSHA384,
+					utls.PKCS1WithSHA384,
+					utls.PSSWithSHA512,
+					utls.PKCS1WithSHA512,
+				},
+			})
+		case 16: // ALPN
+			hasAlpn = true
+			extensions = append(extensions, &utls.ALPNExtension{AlpnProtocols: alpnProtocols})
+		case 21: // Padding
+			extensions = append(extensions, &utls.UtlsPaddingExtension{GetPaddingLen: utls.BoringPaddingStyle})
+		case 23: // Extended Master Secret
+			extensions = append(extensions, &utls.UtlsExtendedMasterSecretExtension{})
+		case 35: // SessionTicket
+			extensions = append(extensions, &utls.SessionTicketExtension{})
+		case 43: // Supported Versions
+			if tlsVers >= tls.VersionTLS13 {
+				extensions = append(extensions, &utls.SupportedVersionsExtension{
+					Versions: []uint16{tls.VersionTLS13, tls.VersionTLS12},
+				})
+			}
+		case 45: // PSK Key Exchange Modes
+			if tlsVers >= tls.VersionTLS13 {
+				extensions = append(extensions, &utls.PSKKeyExchangeModesExtension{
+					Modes: []uint8{utls.PskModeDHE},
+				})
+			}
+		case 51: // Key Share
+			if tlsVers >= tls.VersionTLS13 {
+				extensions = append(extensions, &utls.KeyShareExtension{
+					KeyShares: []utls.KeyShare{
+						{Group: utls.X25519},
+						{Group: utls.CurveP256},
+					},
+				})
+			}
+		case 65281: // Renegotiation Info
+			extensions = append(extensions, &utls.RenegotiationInfoExtension{
+				Renegotiation: utls.RenegotiateOnceAsClient,
+			})
+		}
+	}
+
+	// 确保重要扩展被包含
+	if !hasAlpn && len(alpnProtocols) > 0 {
+		extensions = append(extensions, &utls.ALPNExtension{AlpnProtocols: alpnProtocols})
+	}
+	if !hasCurves && len(curves) > 0 {
+		extensions = append(extensions, &utls.SupportedCurvesExtension{Curves: curves})
+	}
+	if !hasPoints && len(pointFormats) > 0 {
+		extensions = append(extensions, &utls.SupportedPointsExtension{SupportedPoints: pointFormats})
+	}
+
+	// 创建ClientHelloSpec
+	spec := &utls.ClientHelloSpec{
+		TLSVersMin:         tls.VersionTLS10,
+		TLSVersMax:         tlsVers,
+		CipherSuites:       cipherSuites,
+		CompressionMethods: []byte{0}, // no compression
+		Extensions:         extensions,
+	}
+
+	return spec
+}
+
 // ImpersonateCursor impersonates Chrome browser (version 120).
 func ImpersonateCursor(c *req.Client) {
 	c.
@@ -439,6 +615,8 @@ func ImpersonateCursor(c *req.Client) {
 		SetHTTP2ConnectionFlow(15663105).
 		SetCommonHeaders(chromeHeaders)
 
+	// 定义JA3和JA4指纹
+	ja3String := "771,4865-4866-4867-49199-49195-49200-49196-49191-52393-52392-49161-49171-49162-49172-156-157-47-53,0-23-65281-10-11-35-16-13-51-45-43-21,29-23-24,0"
 	ja4String := "t13d1812h2_002f,0035,009c,009d,1301,1302,1303,c009,c00a,c013,c014,c027,c02b,c02c,c02f,c030,cca8,cca9_000a,000b,000d,0015,0017,0023,002b,002d,0033,ff01_0403,0804,0401,0503,0805,0501,0806,0601,0201"
 
 	tlsHandshakeFn := func(ctx context.Context, addr string, plainConn net.Conn) (conn net.Conn, tlsState *tls.ConnectionState, err error) {
@@ -448,20 +626,28 @@ func ImpersonateCursor(c *req.Client) {
 		}
 		hostname := addr[:colonPos]
 
-		// 从JA4创建TLS配置
-		utlsConfig, clientHelloSpec := createTLSConfigFromJA4(ja4String)
-		utlsConfig.ServerName = hostname
-
-		uconn := utls.UClient(plainConn, utlsConfig, utls.HelloCustom)
-
-		if err = uconn.ApplyPreset(clientHelloSpec); err != nil {
-			return nil, nil, err
+		// 创建TLS配置
+		config := &utls.Config{
+			ServerName:         hostname,
+			InsecureSkipVerify: true,
 		}
 
+		// 使用预定义的浏览器配置作为基础
+		uconn := utls.UClient(plainConn, config, utls.HelloCustom)
+
+		// 手动构建一个能同时满足JA3和JA4的ClientHelloSpec
+		spec := buildClientHelloSpecFromFingerprints(ja3String, ja4String, hostname)
+
+		// 应用预设
+		if err = uconn.ApplyPreset(spec); err != nil {
+			return nil, nil, fmt.Errorf("应用预设失败: %w", err)
+		}
+
+		// 执行握手
 		uTLSConn := &uTLSConn{uconn}
 		err = uTLSConn.HandshakeContext(ctx)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, fmt.Errorf("握手失败: %w", err)
 		}
 
 		cs := uconn.ConnectionState()
