@@ -66,7 +66,7 @@ func fetch(ctx *gin.Context, env *env.Environment, cookie string, buffer []byte)
 	// Impersonate Chrome browser to bypass anti-crawler detection
 	// This mocks full HTTP fingerprint including TLS, headers, and other browser characteristics
 	// which helps bypass server-side fingerprint validation and anti-bot measures
-	ImpersonateCursor(client)
+	ImpersonateCursorRandom(client)
 
 	// First request to BidiAppend
 	resp, err := client.R().
@@ -106,11 +106,22 @@ func fetch(ctx *gin.Context, env *env.Environment, cookie string, buffer []byte)
 		return
 	}
 
+	client2 := req.DevMode()
+
+	if proxyUrl != "" {
+		client2.SetProxyURL(proxyUrl)
+	}
+
+	// Impersonate Chrome browser to bypass anti-crawler detection
+	// This mocks full HTTP fingerprint including TLS, headers, and other browser characteristics
+	// which helps bypass server-side fingerprint validation and anti-bot measures
+	ImpersonateCursor(client2)
+
 	header := int32ToBytes(0, len(buffer))
 	buffer = append(header, buffer...)
 
 	// Second request to StreamUnifiedChatWithToolsSSE
-	resp, err = client.R().
+	resp, err = client2.R().
 		SetContext(ctx.Request.Context()).
 		SetBody(buffer).
 		SetHeader("authorization", "Bearer "+cookie).
