@@ -1,11 +1,14 @@
 package cursor
 
 import (
+	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/binary"
 	"github.com/imroc/req/v3"
 	utls "github.com/refraction-networking/utls"
 	"math/big"
+	"net"
 	"strconv"
 	"strings"
 
@@ -126,17 +129,197 @@ var (
 	}
 )
 
+func buildExtensionsFromJA3(extStr, curvesStr, pointFmtStr string) []utls.TLSExtension {
+	var exts []utls.TLSExtension
+
+	// 解析曲线
+	var curves []utls.CurveID
+	if curvesStr != "" {
+		for _, c := range strings.Split(curvesStr, "-") {
+			id, _ := strconv.Atoi(c)
+			curves = append(curves, utls.CurveID(id))
+		}
+	}
+
+	// 解析点格式
+	var pointFormats []byte
+	if pointFmtStr != "" {
+		for _, p := range strings.Split(pointFmtStr, "-") {
+			id, _ := strconv.Atoi(p)
+			pointFormats = append(pointFormats, byte(id))
+		}
+	}
+
+	// 解析扩展
+	if extStr != "" {
+		for _, e := range strings.Split(extStr, "-") {
+			id, _ := strconv.Atoi(e)
+
+			switch uint16(id) {
+			case 0: // SNI
+				exts = append(exts, &utls.SNIExtension{})
+			case 5: // StatusRequest
+				exts = append(exts, &utls.StatusRequestExtension{})
+			case 10: // SupportedCurves
+				exts = append(exts, &utls.SupportedCurvesExtension{Curves: curves})
+			case 11: // SupportedPoints
+				exts = append(exts, &utls.SupportedPointsExtension{SupportedPoints: pointFormats})
+			case 13: // SignatureAlgorithms
+				exts = append(exts, &utls.SignatureAlgorithmsExtension{
+					SupportedSignatureAlgorithms: []utls.SignatureScheme{
+						utls.ECDSAWithP256AndSHA256,
+						utls.PSSWithSHA256,
+						utls.PKCS1WithSHA256,
+						utls.ECDSAWithP384AndSHA384,
+						utls.PSSWithSHA384,
+						utls.PKCS1WithSHA384,
+						utls.PSSWithSHA512,
+						utls.PKCS1WithSHA512,
+					},
+				})
+			case 16: // ALPN
+				exts = append(exts, &utls.ALPNExtension{
+					AlpnProtocols: []string{"h2", "http/1.1"},
+				})
+			case 18: // SCT
+				exts = append(exts, &utls.SCTExtension{})
+			case 21: // PaddingExtension
+				exts = append(exts, &utls.UtlsPaddingExtension{GetPaddingLen: utls.BoringPaddingStyle})
+			case 23: // ExtendedMasterSecret
+				exts = append(exts, &utls.UtlsExtendedMasterSecretExtension{})
+			case 35: // SessionTicket
+				exts = append(exts, &utls.SessionTicketExtension{})
+			case 43: // SupportedVersions
+				exts = append(exts, &utls.SupportedVersionsExtension{
+					Versions: []uint16{utls.VersionTLS13, utls.VersionTLS12},
+				})
+			case 45: // PSKKeyExchangeModes
+				exts = append(exts, &utls.PSKKeyExchangeModesExtension{
+					Modes: []uint8{utls.PskModeDHE},
+				})
+			case 51: // KeyShare
+				exts = append(exts, &utls.KeyShareExtension{
+					KeyShares: []utls.KeyShare{
+						{Group: utls.X25519},
+						{Group: utls.CurveP256},
+					},
+				})
+			case 65281: // RenegotiationInfo
+				exts = append(exts, &utls.RenegotiationInfoExtension{
+					Renegotiation: utls.RenegotiateOnceAsClient,
+				})
+			default:
+				// 对于未知或不支持的扩展，添加空扩展
+				exts = append(exts, &utls.GenericExtension{Id: uint16(id)})
+			}
+		}
+	}
+
+	return exts
+}
+
+// 定义uTLSConn包装utls.UConn
+type uTLSConn struct {
+	*utls.UConn
+}
+
+func (c *uTLSConn) ConnectionState() tls.ConnectionState {
+	cs := c.UConn.ConnectionState()
+	return tls.ConnectionState{
+		Version:                     cs.Version,
+		HandshakeComplete:           cs.HandshakeComplete,
+		DidResume:                   cs.DidResume,
+		CipherSuite:                 cs.CipherSuite,
+		NegotiatedProtocol:          cs.NegotiatedProtocol,
+		NegotiatedProtocolIsMutual:  cs.NegotiatedProtocolIsMutual,
+		ServerName:                  cs.ServerName,
+		PeerCertificates:            cs.PeerCertificates,
+		VerifiedChains:              cs.VerifiedChains,
+		SignedCertificateTimestamps: cs.SignedCertificateTimestamps,
+		OCSPResponse:                cs.OCSPResponse,
+		TLSUnique:                   cs.TLSUnique,
+	}
+}
+
 // ImpersonateCursor impersonates Chrome browser (version 120).
 func ImpersonateCursor(c *req.Client) {
+
+	// 解析JA3指纹
+	ja3 := "771,4865-4866-4867-49199-49195-49200-49196-49191-52393-52392-49161-49171-49162-49172-156-157-47-53,0-23-65281-10-11-35-16-13-51-45-43-21,29-23-24,0"
+	parts := strings.Split(ja3, ",")
+	// 解析TLS版本
+	tlsVersion, _ := strconv.Atoi(parts[0])
+
+	// 解析密码套件
+	cipherSuites := []uint16{}
+	if parts[1] != "" {
+		for _, c := range strings.Split(parts[1], "-") {
+			id, _ := strconv.Atoi(c)
+			cipherSuites = append(cipherSuites, uint16(id))
+		}
+	}
+
+	// 创建自定义指纹处理函数
+	tlsHandshakeFn := func(ctx context.Context, addr string, plainConn net.Conn) (conn net.Conn, tlsState *tls.ConnectionState, err error) {
+		colonPos := strings.LastIndex(addr, ":")
+		if colonPos == -1 {
+			colonPos = len(addr)
+		}
+		hostname := addr[:colonPos]
+		tlsConfig := c.GetTLSClientConfig()
+		utlsConfig := &utls.Config{
+			ServerName:         hostname,
+			InsecureSkipVerify: tlsConfig.InsecureSkipVerify,
+			// 其他配置项
+		}
+
+		uconn := utls.UClient(plainConn, utlsConfig, utls.HelloCustom)
+
+		// 设置Hello参数
+		spec := &utls.ClientHelloSpec{
+			TLSVersMin:         uint16(tlsVersion),
+			TLSVersMax:         uint16(tlsVersion),
+			CipherSuites:       cipherSuites,
+			CompressionMethods: []byte{0},
+			Extensions:         buildExtensionsFromJA3(parts[2], parts[3], parts[4]),
+		}
+
+		if err = uconn.ApplyPreset(spec); err != nil {
+			return nil, nil, err
+		}
+
+		uTLSConn := &uTLSConn{uconn}
+		err = uTLSConn.HandshakeContext(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		cs := uconn.ConnectionState()
+		conn = uTLSConn
+		tlsState = &tls.ConnectionState{
+			Version:                     cs.Version,
+			HandshakeComplete:           cs.HandshakeComplete,
+			DidResume:                   cs.DidResume,
+			CipherSuite:                 cs.CipherSuite,
+			NegotiatedProtocol:          cs.NegotiatedProtocol,
+			NegotiatedProtocolIsMutual:  cs.NegotiatedProtocolIsMutual,
+			ServerName:                  cs.ServerName,
+			PeerCertificates:            cs.PeerCertificates,
+			VerifiedChains:              cs.VerifiedChains,
+			SignedCertificateTimestamps: cs.SignedCertificateTimestamps,
+			OCSPResponse:                cs.OCSPResponse,
+			TLSUnique:                   cs.TLSUnique,
+		}
+		return
+	}
+
+	c.Transport.SetTLSHandshake(tlsHandshakeFn)
+
 	c.
-		SetTLSFingerprint(utls.HelloRandomizedNoALPN).
+		//SetTLSFingerprint(utls.HelloRandomizedNoALPN).
 		SetHTTP2SettingsFrame(chromeHttp2Settings...).
 		SetHTTP2ConnectionFlow(15663105).
-		//SetCommonPseudoHeaderOder(chromePseudoHeaderOrder...)
-		//SetCommonHeaderOrder(chromeHeaderOrder...).
 		SetCommonHeaders(chromeHeaders)
-	//SetHTTP2HeaderPriority(chromeHeaderPriority).
-	//SetMultipartBoundaryFunc(webkitMultipartBoundaryFunc)
 }
 
 var (

@@ -21,6 +21,7 @@ require (
 	github.com/iocgo/sdk v0.0.0-20241203133330-43dcedf3291e
 	github.com/lestrrat-go/file-rotatelogs v2.4.0+incompatible
 	github.com/patrickmn/go-cache v2.1.0+incompatible
+	github.com/refraction-networking/utls v1.6.7
 	github.com/samber/go-gpt-3-encoder v0.3.1
 	github.com/sirupsen/logrus v1.9.3
 	github.com/wasmerio/wasmer-go v1.0.5-0.20250109124841-f09913d8a0be
@@ -78,7 +79,6 @@ require (
 	github.com/prometheus/procfs v0.12.0 // indirect
 	github.com/quic-go/qpack v0.5.1 // indirect
 	github.com/quic-go/quic-go v0.51.0 // indirect
-	github.com/refraction-networking/utls v1.6.7 // indirect
 	github.com/sagikazarmark/locafero v0.4.0 // indirect
 	github.com/sagikazarmark/slog-shim v0.1.0 // indirect
 	github.com/samber/do/v2 v2.0.0-beta.7 // indirect
