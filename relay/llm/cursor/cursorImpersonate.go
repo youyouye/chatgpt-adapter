@@ -247,8 +247,6 @@ func ImpersonateCursor(c *req.Client) {
 	// 解析JA3指纹
 	ja3 := "771,4865-4866-4867-49199-49195-49200-49196-49191-52393-52392-49161-49171-49162-49172-156-157-47-53,0-23-65281-10-11-35-16-13-51-45-43-21,29-23-24,0"
 	parts := strings.Split(ja3, ",")
-	// 解析TLS版本
-	tlsVersion, _ := strconv.Atoi(parts[0])
 
 	// 解析密码套件
 	cipherSuites := []uint16{}
@@ -277,8 +275,8 @@ func ImpersonateCursor(c *req.Client) {
 
 		// 设置Hello参数
 		spec := &utls.ClientHelloSpec{
-			TLSVersMin:         uint16(tlsVersion),
-			TLSVersMax:         uint16(tlsVersion),
+			TLSVersMin:         tls.VersionTLS10, // 0x0301
+			TLSVersMax:         tls.VersionTLS12, // 0x0303
 			CipherSuites:       cipherSuites,
 			CompressionMethods: []byte{0},
 			Extensions:         buildExtensionsFromJA3(parts[2], parts[3], parts[4]),
