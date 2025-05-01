@@ -276,7 +276,7 @@ func ImpersonateCursor(c *req.Client) {
 		// 设置Hello参数
 		spec := &utls.ClientHelloSpec{
 			TLSVersMin:         tls.VersionTLS10, // 0x0301
-			TLSVersMax:         tls.VersionTLS12, // 0x0303
+			TLSVersMax:         tls.VersionTLS13, // 0x0303
 			CipherSuites:       cipherSuites,
 			CompressionMethods: []byte{0},
 			Extensions:         buildExtensionsFromJA3(parts[2], parts[3], parts[4]),
